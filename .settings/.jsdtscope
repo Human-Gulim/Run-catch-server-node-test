@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<classpath>
+	<classpathentry excluding="**/jquery*.js|node_modules/**/*|public/js/jquery-1.9.2.min.js" kind="src" path=""/>
+	<classpathentry kind="con" path="org.eclipse.wst.jsdt.launching.JRE_CONTAINER"/>
+	<classpathentry kind="lib" path="node_modules"/>
+	<classpathentry kind="output" path=""/>
+</classpath>

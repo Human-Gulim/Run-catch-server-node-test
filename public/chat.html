@@ -1,0 +1,212 @@
+<!-- js라이브러리 에러 잡음 : http://stove99.tistory.com/37-->
+<html>
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+<title>Chatting</title>
+<script type="text/javascript" src="js/jquery-1.9.2.min.js"></script>
+<script type="text/javascript" src="/socket.io/socket.io.js"></script>
+<link rel="stylesheet" href="/stylesheets/style.css">
+<script>
+
+var roomlist = [];
+var serverUrl = 'http://localhost:3000';
+var socket = io.connect(serverUrl);
+var clientid;
+var nickname;
+
+
+//밑에 코드를 이용해서 [방만들기]버튼에 이벤트 핸들러를 추가한다. 
+$(document).ready(function(){	
+	
+	
+	//방만들기 
+	$("#room_make").click(function(){//클릭했을 때 방 이름과 닉네임을 가져와 websocket을 이용하여 보내고 방이름과 닉네임을 초기화 한다.
+		var data = {"roomname":$("#roomname").val(),"nickname":$("#nickname").val()};
+		socket.emit('roommake', data);
+		$("#roomname").val("");
+		nickname = $("#nickname").val();
+	});
+	
+	
+	//이제 service 디렉토리를 보면 주석이 또 달려있을거야.
+	
+	
+	$("#chatroom").hide();
+	
+	//로딩시에 방목록 얻어오기 요청
+	getRoomList();
+	
+	//방목록 얻어오기 요청358p
+	//서버에서 보내주는 데이터를 받아서 화면을 그릴 수 있는 로직을 추가하고 viewRoomlist를 다시 호출하여 방 목록을 그린다.
+	socket.on('roomlist',function(data){
+		
+		//개설된 방목록 
+		roomlist = [];
+		
+		clientid = data.clientid;
+		data = data.roomdata;
+		
+		for(var key in data){
+			if(key.indexOf("/") > -1){
+				
+				var myroom = false;
+				
+				for(var i = 0 ; i < data[key].length ; i++){
+					if(data[key][i] == io.sockets[serverUrl].sessionid)
+						myroom = true;
+				}
+				
+				roomlist.push({"name":key.split("/").join(""),count:data[key].length,myroom:myroom});
+			}
+		}
+
+		viewRoomlist(roomlist);
+	});
+	
+	
+	//Room 변경 
+	socket.on('room_research',function(data){
+		getRoomList();
+	});
+	
+	//입장시 화면 처리
+	socket.on('intro',function(data){
+		$("#chatroom textarea").val($("#chatroom textarea").val() + '(' + data + ') 님이 입장하셧습니다.\n');
+		$('#chatroom textarea').scrollTop($('#chatroom textarea')[0].scrollHeight);
+	});
+
+	//msg 처리
+	//다음과 같이 데이터를 받아 화면에 뿌려주고 스크롤을 내려준다.
+	socket.on('message_send',function(data){
+		$("#chatroom textarea").val($("#chatroom textarea").val() + '[' + data.from + '] : ' + data.msg + '\n');
+		$('#chatroom textarea').scrollTop($('#chatroom textarea')[0].scrollHeight);
+		console.log(data);
+		
+	});
+	
+	//퇴장 화면 처리
+	//ChatServer.js에서 처리한 것로부터 메세지를 받아서 채팅 창에 뿌려주고 방목록 정보를 갱신
+	socket.on('message_send_disconnect',function(data){
+		
+		console.log("DICONNECT");
+		
+		$("#chatroom textarea").val($("#chatroom textarea").val() + '(' + data.from + ') 님이 퇴장 하셧습니다.\n');
+		$('#chatroom textarea').scrollTop($('#chatroom textarea')[0].scrollHeight);
+	});
+
+	
+	//입력창에서 엔터시에 데이터 전송
+	//서로간의 메세지를 전송하는 기능에 대한 구현
+	//입력창(input태그)에서 <Enter> 입력시에 값을 전송하는 기능을 구현한다.
+	//$(document).ready메서드에 구현한다.
+	
+	$("#chatroom div input").keypress(function(e){
+		if(e.keyCode == 13){
+			socket.emit('message', {"msg":$("#chatroom div input").val()});
+			$("#chatroom div input").val("");
+		}
+	});
+	
+});
+
+//REST API를 호출하여 서버에 현재 생성된 방 정보를 요청한다.(방목록 받아오기)
+function getRoomList(){
+	//JQuery에서 ajax를 이용하여 REST API 호출하는 방법
+	$.ajax({
+		type: "get",//type에 get/post/put/delete 등의메서드를 넣어주고
+		dataType: "json",//dataType에 json,text등의 type
+		url: "/roomlist",// 그리고 url에 해당 주소를 넣어준다.
+		success: function(data){//성공 콜백 메서드에는 요청이 성공했을 경우 호출되고
+			console.log(data);
+			roomlist = [];
+			//io.sockets.manager.rooms 객체의 값을 받은 success 메서드에서 해당 방 이름과 각 방의 접속자 수를 가져오는 로직을 추가한다.
+			for(var key in data){
+				if(key.indexOf("/") > -1){
+					var myroom = false;
+					for(var i = 0 ; i < data[key].length ; i++){
+						//또, 자신의 클라이언트 sesstion id 값을 비교하여 자신이 해당 방에 포함되어 있는지 확인하는 json변수를 만들어
+						if(data[key][i] == io.sockets[serverUrl].sessionid)
+							myroom = true;
+					}
+					//roomlist 배열에 넣고
+					roomlist.push({"name":key.split("/").join(""),count:data[key].length,myroom:myroom});
+				}
+			}
+			//방 목록을 그리기 위한 함수(ciewRoomlist)에 인자값으로 해당 배열을 넣는다.
+			viewRoomlist(roomlist);
+		},
+		error: function(res){// 실패한 경우 에러 콜백으로 넘어간다.
+			
+		}
+	});
+	
+}
+
+//방 목록을 그려주기 위한 함수(viewRoomlist)에서는 roomlist 배열을 받아서 방 목록을 그려준다.
+function viewRoomlist(data){
+	
+	//기존리스트 삭제
+	$("#roomlist li").remove();
+	$("#room").show();
+	
+	//방목록 표기 
+	//여기에서는 textarea 태그를 이용하여 채팅 내용을 표기하고 input 태그를 이용하여 메시지 입력을 받는다.
+	//그리고 viewroomlist 메서드에서 자신이 포함된 방이있을 경우, 방목록 화면을 안보이게 처리하고 채팅 화면을 보여준다.
+	for(var i = 0 ; i < data.length ; i++){
+		if(data[i].myroom){
+			$("#room").hide();
+			$("#roommake").hide();
+			$("#chatroom").show();
+			$("#chatroom legend").text("방이름 : " + data[i].name + " || 참여자수 : " + data[i].count + " || nickname:" + nickname);
+			
+		}else{
+			$("#roomlist").append("<li '>방이름 :" + data[i].name + ", 참여자수 :" + data[i].count + 
+					", 닉네임 : <input type = 'text'> <input type = 'button' value = '입장하기' data-roomname='" + data[i].name + "' > </li>");
+		}
+	}
+	//방이 없는 경우 방이 없다는 화면 표기를 해주고
+	if(data.length < 1){
+		$("#roomlist").append("<li>생성된 방이 없습니다.</li>");
+	}else{
+		// 있을 경우 방 입장하기 버튼에 이벤트 핸들러를 등록한다.
+		$("#roomlist li input[type=button]").click(function(){
+
+			var data = {"roomname":$(this).data("roomname"),"nickname":$("#roomlist li input[type=text]").val()};
+			socket.emit('roommake', data);
+			nickname = $("#roomlist li input[type=text]").val();
+			
+		});
+		
+	}
+	
+}
+
+</script>
+</head>
+
+<body>
+<!-- 방을 만들기 위한 HTML 소스 -->
+<h1>채팅</h1>
+
+<fieldset id = "roommake">
+	<legend>방만들기</legend>
+	방이름 : <input id = "roomname" type="text" value ><br>
+	닉네임 : <input id = "nickname" type="text" value ><br>
+	<input id = "room_make" type = "button" value = "방만들기">
+</fieldset>
+
+<fieldset id = "room" >
+	<legend>개설된 방목록 </legend>
+	<div id = "roomlist"></div>
+</fieldset>
+<!-- 개설된 방이나 방을 개설하여 입장 메세지를 주고 받는 부분을 구현 -->
+<fieldset id = "chatroom" >
+	<legend> </legend>
+	<textarea cols = 50 rows = 20 readonly></textarea>
+	<div>
+		<input type = "text" size = "50">
+	</div>
+</fieldset>
+
+</body>
+</html>
